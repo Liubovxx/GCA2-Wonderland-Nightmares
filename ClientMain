@@ -1,0 +1,56 @@
+package client;
+
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import domain.Card;
+import java.io.*;
+import java.net.Socket;
+import java.util.List;
+import java.util.Scanner;
+
+public class ClientMain {
+    private static final String HOST = "localhost";
+    private static final int PORT = 9000;
+    private static Gson gson = new Gson();
+
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+
+        try (Socket socket = new Socket(HOST, PORT);
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+
+            System.out.println("Connected to server!");
+
+            while (true) {
+                System.out.println("\n=== Wonderland Nightmares ===");
+                System.out.println("1. Show all cards");
+                System.out.println("2. Exit");
+                System.out.print("Choose option: ");
+
+                String choice = scanner.nextLine();
+
+                if (choice.equals("1")) {
+                    out.println("GET_ALL_CARDS");
+                    String response = in.readLine();
+                    List<Card> cards = gson.fromJson(response, new TypeToken<List<Card>>(){}.getType());
+
+                    System.out.println("\nAll Cards:");
+                    for (Card c : cards) {
+                        System.out.println(c.getCardId() + " | " + c.getCardName() + " | " + 
+                                         c.getCharacterType() + " | Madness: " + c.getMadnessLevel());
+                    }
+                } 
+                else if (choice.equals("2")) {
+                    out.println("EXIT");
+                    System.out.println("Disconnected.");
+                    break;
+                }
+            }
+
+        } catch (IOException e) {
+            System.out.println("Cannot connect to server. Is server running?");
+            e.printStackTrace();
+        }
+    }
+}
