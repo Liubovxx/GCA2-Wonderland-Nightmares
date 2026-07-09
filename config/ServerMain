@@ -1,0 +1,23 @@
+package server;
+
+import service.CardService;
+import java.io.*;
+import java.net.*;
+
+public class ServerMain {
+    private static final int PORT = 9000;
+
+    public static void main(String[] args) {
+        CardService cardService = new CardService();
+        System.out.println("Server started on port " + PORT);
+
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+            while (true) {
+                Socket socket = serverSocket.accept();
+                new Thread(new ClientHandler(socket, cardService)).start();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
