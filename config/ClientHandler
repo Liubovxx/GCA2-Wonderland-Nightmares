@@ -1,0 +1,48 @@
+package server;
+
+import com.google.gson.Gson;
+import domain.Card;
+import service.CardService;
+import java.io.*;
+import java.net.Socket;
+import java.util.List;
+
+public class ClientHandler implements Runnable {
+    private Socket socket;
+    private CardService cardService;
+    private Gson gson;
+
+    public ClientHandler(Socket socket, CardService cardService) {
+        this.socket = socket;
+        this.cardService = cardService;
+        this.gson = new Gson();
+    }
+
+    @Override
+    public void run() {
+        try (
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true)
+        ) {
+            String line;
+            while ((line = in.readLine()) != null) {
+                if (line.equals("GET_ALL_CARDS")) {
+                    List<Card> cards = cardService.getAllCards();
+                    String json = gson.toJson(cards);
+                    out.println(json);
+                } 
+                else if (line.equals("EXIT")) {
+                    break;
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                socket.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
