@@ -1,56 +1,141 @@
 package client;
 
 import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 import domain.Card;
-import java.io.*;
+import dto.ClientRequest;
+import dto.ServerResponse;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.net.Socket;
-import java.util.List;
 import java.util.Scanner;
 
 public class ClientMain {
     private static final String HOST = "localhost";
-    private static final int PORT = 9000;
-    private static Gson gson = new Gson();
+    private static final int PORT = 8080;
+    private static final Gson gson = new Gson();
 
     public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
+        System.out.println("=== WONDERLAND NIGHTMARES CLIENT ===");
+        
+        try (
+            Socket socket = new Socket(HOST, PORT);
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            Scanner scanner = new Scanner(System.in)
+        ) {
+            System.out.println("Connected to Wonderland Nightmares Server!");
+            boolean running = true;
 
-        try (Socket socket = new Socket(HOST, PORT);
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
-
-            System.out.println("Connected to server!");
-
-            while (true) {
-                System.out.println("\n=== Wonderland Nightmares ===");
-                System.out.println("1. Show all cards");
-                System.out.println("2. Exit");
-                System.out.print("Choose option: ");
-
+            while (running) {
+                printMenu();
+                System.out.print("Select an option (1-6): ");
                 String choice = scanner.nextLine();
 
-                if (choice.equals("1")) {
-                    out.println("GET_ALL_CARDS");
-                    String response = in.readLine();
-                    List<Card> cards = gson.fromJson(response, new TypeToken<List<Card>>(){}.getType());
-
-                    System.out.println("\nAll Cards:");
-                    for (Card c : cards) {
-                        System.out.println(c.getCardId() + " | " + c.getCardName() + " | " + 
-                                         c.getCharacterType() + " | Madness: " + c.getMadnessLevel());
-                    }
-                } 
-                else if (choice.equals("2")) {
-                    out.println("EXIT");
-                    System.out.println("Disconnected.");
-                    break;
+                switch (choice) {
+                    case "1": // Display All
+                        sendRequest(out, in, "GET_ALL", "");
+                        break;
+                    case "2": // Display by ID
+                        System.out.print("Enter Card ID: ");
+                        String id = scanner.nextLine();
+                        sendRequest(out, in, "GET_BY_ID", id);
+                        break;
+                    case "3": // Add Card
+                        Card newCard = createCardFromInput(scanner, 0);
+                        sendRequest(out, in, "ADD", gson.toJson(newCard));
+                        break;
+                    case "4": // Update Card
+                        System.out.print("Enter Card ID to update: ");
+                        int updateId = Integer.parseInt(scanner.nextLine());
+                        Card updatedCard = createCardFromInput(scanner, updateId);
+                        sendRequest(out, in, "UPDATE", gson.toJson(updatedCard));
+                        break;
+                    case "5": // Delete Card
+                        System.out.print("Enter Card ID to delete: ");
+                        String deleteId = scanner.nextLine();
+                        sendRequest(out, in, "DELETE", deleteId);
+                        break;
+                    case "6": // Disconnect
+                        sendRequest(out, in, "DISCONNECT", "");
+                        running = false;
+                        System.out.println("Disconnecting from server... Bye!");
+                        break;
+                    default:
+                        System.out.println("Invalid choice. Please try again.");
                 }
             }
-
-        } catch (IOException e) {
-            System.out.println("Cannot connect to server. Is server running?");
-            e.printStackTrace();
+        } catch (Exception e) {
+            System.err.println("Client error: " + e.getMessage());
         }
+    }
+
+    private static void printMenu() {
+        System.out.println("\n------------------------------------");
+        System.out.println("1. Display All Cards");
+        System.out.println("2. Display Card by ID");
+        System.out.println("3. Add New Card");
+        System.out.println("4. Update Existing Card");
+        System.out.println("5. Delete Card by ID");
+        System.out.println("6. Disconnect & Exit");
+        System.out.println("------------------------------------");
+    }
+
+    private static void sendRequest(PrintWriter out, BufferedReader in, String type, String payload) {
+        try {
+            ClientRequest request = new ClientRequest(type, payload);
+            String jsonRequest = gson.toJson(request);
+            
+            // Відправляємо JSON на сервер
+            out.println(jsonRequest);
+
+            // Отримуємо JSON відповідь від сервера
+            String jsonResponse = in.readLine();
+            ServerResponse<?> response = gson.fromJson(jsonResponse, ServerResponse.class);
+
+            System.out.println("\n[SERVER RESPONSE]");
+            System.out.println("Status  : " + response.getStatus());
+            System.out.println("Message : " + response.getMessage());
+            if (response.getData() != null) {
+                System.out.println("Data    : " + response.getData());
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to communicate with server: " + e.getMessage());
+        }
+    }
+
+    private static Card createCardFromInput(Scanner scanner, int id) {
+        Card card = new Card();
+        card.setCardId(id);
+
+        System.out.print("Card Name: ");
+        card.setCardName(scanner.nextLine());
+
+        System.out.print("Character Type (Hero/Villain/Creature/Weapon/Location): ");
+        card.setCharacterType(scanner.nextLine());
+
+        System.out.print("Domain (e.g., Vale of Tears, Queensland): ");
+        card.setDomain(scanner.nextLine());
+
+        System.out.print("Madness Level (int): ");
+        card.setMadnessLevel(Integer.parseInt(scanner.nextLine()));
+
+        System.out.print("Attack (int): ");
+        card.setAttack(Integer.parseInt(scanner.nextLine()));
+
+        System.out.print("Defense (int): ");
+        card.setDefense(Integer.parseInt(scanner.nextLine()));
+
+        System.out.print("Ability description: ");
+        card.setAbility(scanner.nextLine());
+
+        System.out.print("Rarity (Common/Rare/Legendary): ");
+        card.setRarity(scanner.nextLine());
+
+        System.out.print("Market Price (double): ");
+        card.setMarketPrice(Double.parseDouble(scanner.nextLine()));
+
+        return card;
     }
 }
