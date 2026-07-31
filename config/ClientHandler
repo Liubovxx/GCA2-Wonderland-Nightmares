@@ -1,48 +1,103 @@
-package server;
+package config;
 
 import com.google.gson.Gson;
+import dao.Dao;
+import dao.JdbcCardDao;
 import domain.Card;
-import service.CardService;
-import java.io.*;
+import dto.ClientRequest;
+import dto.ServerResponse;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.List;
+import java.util.Optional;
 
 public class ClientHandler implements Runnable {
-    private Socket socket;
-    private CardService cardService;
-    private Gson gson;
+    private final Socket clientSocket;
+    private final Dao<Card, Integer> cardDao;
+    private final Gson gson;
 
-    public ClientHandler(Socket socket, CardService cardService) {
-        this.socket = socket;
-        this.cardService = cardService;
+    public ClientHandler(Socket socket) {
+        this.clientSocket = socket;
+        this.cardDao = new JdbcCardDao(); // Застосування DAO
         this.gson = new Gson();
     }
 
     @Override
     public void run() {
+        System.out.println("Client connected: " + clientSocket.getRemoteSocketAddress());
         try (
-            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            PrintWriter out = new PrintWriter(socket.getOutputStream(), true)
+            BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+            PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)
         ) {
-            String line;
-            while ((line = in.readLine()) != null) {
-                if (line.equals("GET_ALL_CARDS")) {
-                    List<Card> cards = cardService.getAllCards();
-                    String json = gson.toJson(cards);
-                    out.println(json);
-                } 
-                else if (line.equals("EXIT")) {
-                    break;
+            String inputLine;
+            while ((inputLine = in.readLine()) != null) {
+                // Парсимо JSON запит від клієнта
+                ClientRequest request = gson.fromJson(inputLine, ClientRequest.class);
+                
+                if ("DISCONNECT".equalsIgnoreCase(request.getRequestType())) {
+                    System.out.println("Client disconnected cleanly: " + clientSocket.getRemoteSocketAddress());
+                    ServerResponse<String> response = ServerResponse.success("Disconnected successfully", null);
+                    out.println(gson.toJson(response));
+                    break; // Виходимо з циклу та закриваємо потік (F17)
                 }
+
+                // Обробка запиту
+                String responseJson = handleRequest(request);
+                out.println(responseJson);
             }
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (Exception e) {
+            System.err.println("Error handling client " + clientSocket.getRemoteSocketAddress() + ": " + e.getMessage());
         } finally {
             try {
-                socket.close();
-            } catch (IOException e) {
-                e.printStackTrace();
+                clientSocket.close();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private String handleRequest(ClientRequest request) {
+        try {
+            switch (request.getRequestType().toUpperCase()) {
+                case "GET_ALL":
+                    List<Card> cards = cardDao.getAll();
+                    return gson.toJson(ServerResponse.success("All cards retrieved", cards));
+
+                case "GET_BY_ID":
+                    int id = Integer.parseInt(request.getPayload());
+                    Optional<Card> card = cardDao.getById(id);
+                    if (card.isPresent()) {
+                        return gson.toJson(ServerResponse.success("Card found", card.get()));
+                    } else {
+                        return gson.toJson(ServerResponse.error("Card not found with ID: " + id));
+                    }
+
+                case "ADD":
+                    Card newCard = gson.fromJson(request.getPayload(), Card.class);
+                    Card savedCard = cardDao.insert(newCard);
+                    return gson.toJson(ServerResponse.success("Card created", savedCard));
+
+                case "UPDATE":
+                    Card cardToUpdate = gson.fromJson(request.getPayload(), Card.class);
+                    Card updatedCard = cardDao.update(cardToUpdate.getCardId(), cardToUpdate);
+                    return gson.toJson(ServerResponse.success("Card updated", updatedCard));
+
+                case "DELETE":
+                    int deleteId = Integer.parseInt(request.getPayload());
+                    boolean deleted = cardDao.deleteById(deleteId);
+                    if (deleted) {
+                        return gson.toJson(ServerResponse.success("Card deleted", true));
+                    } else {
+                        return gson.toJson(ServerResponse.error("Failed to delete card with ID: " + deleteId));
+                    }
+
+                default:
+                    return gson.toJson(ServerResponse.error("Unknown request type: " + request.getRequestType()));
             }
+        } catch (Exception e) {
+            // Сервер ніколи не крашиться і відправляє зрозумілу помилку (F13)
+            return gson.toJson(ServerResponse.error("Server error: " + e.getMessage()));
         }
     }
 }
